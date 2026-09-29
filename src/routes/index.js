@@ -1,0 +1,69 @@
+const os = require('os');
+const mongoose = require('mongoose');
+const Event = require('../models/Event');
+const { Router } = require('express');
+const authRoutes = require('./auth.routes');
+const accountRoutes = require('./account.routes');
+const permissionRoutes = require('./permission.routes');
+const walletRoutes = require('./wallet.routes');
+const transactionRoutes = require('./transaction.routes');
+const eventRoutes = require('./event.routes');
+const marketRoutes = require('./market.routes');
+const bettingRoutes = require('./betting.routes');
+const riskRoutes = require('./risk.routes');
+const commissionRoutes = require('./commission.routes');
+const partnershipRoutes = require('./partnership.routes');
+const reportRoutes = require('./report.routes');
+const analyticsRoutes = require('./analytics.routes');
+const cmsRoutes = require('./cms.routes');
+const notificationRoutes = require('./notification.routes');
+const supportRoutes = require('./support.routes');
+const settingsRoutes = require('./settings.routes');
+const dashboardRoutes = require('./dashboard.routes');
+const networkRoutes = require('./network.routes');
+const kycRoutes = require('./kyc.routes');
+const playerRoutes = require('./player.routes');
+
+const router = Router();
+
+/**
+ * Liveness plus the figures the panels' topbar / status bar show: DB round
+ * trip, CPU load, process uptime and how many matches are in play.
+ */
+router.get('/health', async (_req, res) => {
+  const started = Date.now();
+  let dbOk = true;
+  try {
+    await mongoose.connection.db.admin().ping();
+  } catch {
+    dbOk = false;
+  }
+  const dbMs = Date.now() - started;
+  const liveMatches = dbOk ? await Event.countDocuments({ status: 'Live' }) : 0;
+  const cpu = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
+  res.json({ status: dbOk ? 'ok' : 'degraded', dbMs, cpu, uptimeSeconds: Math.round(process.uptime()), liveMatches });
+});
+
+router.use('/auth', authRoutes);
+router.use('/accounts', accountRoutes);
+router.use('/permissions', permissionRoutes);
+router.use('/wallet', walletRoutes);
+router.use('/transactions', transactionRoutes);
+router.use('/events', eventRoutes);
+router.use('/markets', marketRoutes);
+router.use('/betting', bettingRoutes);
+router.use('/risk', riskRoutes);
+router.use('/commission', commissionRoutes);
+router.use('/partnership', partnershipRoutes);
+router.use('/reports', reportRoutes);
+router.use('/analytics', analyticsRoutes);
+router.use('/cms', cmsRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/support', supportRoutes);
+router.use('/settings', settingsRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/network', networkRoutes);
+router.use('/kyc', kycRoutes);
+router.use('/player', playerRoutes);
+
+module.exports = router;

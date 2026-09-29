@@ -1,0 +1,30 @@
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const env = require('./config/env');
+const routes = require('./routes');
+const { notFound, errorHandler } = require('./middleware/errorHandler');
+
+const app = express();
+
+app.use(helmet());
+app.use(
+  cors({
+    origin: env.corsOrigins,
+    credentials: true,
+  }),
+);
+// Raised from Express's 100kb default so a base64-encoded profile photo (see
+// User.avatar) fits comfortably in the request body.
+// KYC uploads carry up to two document photos, so only that route gets a larger body.
+app.use('/api/kyc', express.json({ limit: '12mb' }));
+// A deposit request carries the payment screenshot (up to 5MB, base64).
+app.use('/api/player/wallet/requests', express.json({ limit: '8mb' }));
+app.use(express.json({ limit: '3mb' }));
+
+app.use('/api', routes);
+
+app.use(notFound);
+app.use(errorHandler);
+
+module.exports = app;
