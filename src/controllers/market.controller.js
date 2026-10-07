@@ -21,8 +21,8 @@ const updateStatus = asyncHandler(async (req, res) => {
   res.json({ market });
 });
 
-const suspendAll = asyncHandler(async (_req, res) => {
-  const result = await marketService.suspendAll();
+const suspendAll = asyncHandler(async (req, res) => {
+  const result = await marketService.suspendAll(req.body?.eventId);
   res.json(result);
 });
 

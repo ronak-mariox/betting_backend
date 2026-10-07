@@ -108,8 +108,10 @@ const updateMarketStatus = async (id, status) => {
   return market;
 };
 
-const suspendAll = async () => {
-  const result = await Market.updateMany({ status: 'Active' }, { $set: { status: 'Suspended' } });
+/** Suspends every Active market — on one event when `eventId` is given, else platform-wide. */
+const suspendAll = async (eventId) => {
+  const filter = { status: 'Active', ...(eventId ? { event: eventId } : {}) };
+  const result = await Market.updateMany(filter, { $set: { status: 'Suspended' } });
   return { modifiedCount: result.modifiedCount };
 };
 

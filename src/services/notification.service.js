@@ -260,14 +260,33 @@ const listForPlayer = async (player, { limit = DEFAULT_PAGE_LIMIT } = {}) => {
   return { notifications: items.map(toPlayerView), unreadCount };
 };
 
+/**
+ * A CMS item counts a view the first time each player reads it in the app
+ * (one notification per player per item, so nobody is counted twice).
+ */
+const countCmsViews = async (rows) => {
+  const perContent = new Map();
+  rows.forEach((row) => {
+    const id = row.source?.startsWith('cms:') ? row.source.slice(4) : null;
+    if (id) perContent.set(id, (perContent.get(id) || 0) + 1);
+  });
+  await Promise.all(
+    [...perContent].map(([id, n]) => CmsContent.updateOne({ _id: id }, { $inc: { views: n } }).catch(() => null)),
+  );
+};
+
 const markReadForPlayer = async (player, id) => {
+  // The pre-update row tells whether this read is the first one.
   const row = await Notification.findOneAndUpdate({ _id: id, recipient: player._id }, { $set: { unread: false } });
   if (!row) throw ApiError.notFound('Notification not found');
+  if (row.unread) await countCmsViews([row]);
   return listForPlayer(player);
 };
 
 const markAllReadForPlayer = async (player) => {
+  const unreadCms = await Notification.find({ recipient: player._id, unread: true, source: /^cms:/ }).select('source').lean();
   await Notification.updateMany({ recipient: player._id, unread: true }, { $set: { unread: false } });
+  await countCmsViews(unreadCms);
   return listForPlayer(player);
 };
 

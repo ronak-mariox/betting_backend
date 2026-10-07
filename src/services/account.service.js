@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const { hashPassword } = require('./password.service');
+const Partner = require('../models/Partner');
 const { ROLE_ORDER, CHILD_ROLE, CAN_CREATE_ANY_LEVEL, roleIndex } = require('../constants/roles');
 
 /** The role that must sit directly above a given role in the hierarchy. */
@@ -145,7 +146,8 @@ async function generateReferralCode(username) {
     const suffix = Math.floor(1000 + Math.random() * 9000);
     const candidate = `${base}${suffix}`;
     // eslint-disable-next-line no-await-in-loop
-    const exists = await User.exists({ referralCode: candidate });
+    // Partner codes share the sign-up field, so they're off-limits too.
+    const exists = (await User.exists({ referralCode: candidate })) || (await Partner.exists({ referralCode: candidate }));
     if (!exists) return candidate;
   }
   throw new Error('Could not generate a unique referral code, please retry');
@@ -170,6 +172,8 @@ async function pickAvailableAgent() {
  *   - an active agent's referral code puts the player under that agent;
  *   - a player's referral code records the referrer and puts the new player
  *     under the referrer's agent (if that agent is active);
+ *   - an active partner's code links the player to that partner (for its
+ *     volume and revenue share) and places them like no code would;
  *   - otherwise (no code, unknown code, inactive agent) the player goes to a
  *     random active agent. Unassigned only when no active agent exists.
  */
@@ -181,11 +185,15 @@ async function registerPlayer({ username, password, referralCode }) {
 
   let referredBy = null;
   let parent = null;
+  /** A partner (affiliate) code: the player joins through that partner and lands with a random agent. */
+  let partner = null;
   const code = referralCode?.trim().toUpperCase();
   if (code) {
     // An unrecognized code is ignored rather than blocking sign-up — the
     // screen treats the field as optional and never validates it up front.
     const owner = await User.findOne({ referralCode: code, role: { $in: ['agent', 'player'] } });
+    // eslint-disable-next-line global-require
+    if (!owner) partner = (await require('./partnership.service').findActiveByCode(code))?._id ?? null;
     if (owner?.role === 'agent' && owner.status === 'active') {
       parent = owner._id;
     } else if (owner?.role === 'player') {
@@ -209,6 +217,7 @@ async function registerPlayer({ username, password, referralCode }) {
     createdBy: null,
     referralCode: ownReferralCode,
     referredBy,
+    partner,
   });
 }
 

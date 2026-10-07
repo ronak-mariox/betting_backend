@@ -28,6 +28,10 @@ const createEvent = async ({ sport, league, name, emoji, startTime }) => {
 
 const updateEventStatus = async ({ id, status }) => {
   const before = await Event.findById(id).select('status');
+  // A finished match stays finished: reopening it would let players bet on a known result.
+  if (['Completed', 'Settled'].includes(before?.status) && ['Live', 'Upcoming'].includes(status)) {
+    throw ApiError.conflict(`This match is already ${before.status.toLowerCase()} and can't be reopened`);
+  }
   const event = await Event.findByIdAndUpdate(id, { status }, { new: true });
   if (!event) throw ApiError.notFound('Event not found');
   if (status === 'Live' && before?.status !== 'Live') await notificationService.notifyMatchLive(event);
