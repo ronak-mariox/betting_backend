@@ -62,16 +62,9 @@ server seeds:
   `demo_rahul` (KYC not submitted), `demo_priya` (KYC pending),
   `demo_amit` (KYC verified).
 
-`npm run reset-demo` wipes everything except the demo logins and reseeds the
-demo book (refuses to run when `NODE_ENV=production`).
-
-**Starting from an empty database.** `npm run wipe-data -- --yes` deletes
-everything except the four staff logins (`mithu8178`, `franchise01`,
-`superagent01`, `agent01`), Settings and the permission matrix: no players, no
-matches, no ledger. Put `SEED_DEMO_DATA=false` in `.env` with it, or the dev
-server seeds the demo players and matches again on its next start. Take a
-backup first (`mongodump --uri="$MONGO_URI" --gzip --out=backups/<date>`;
-`backups/` is git-ignored).
+`SEED_DEMO_DATA=false` in `.env` keeps the database as it is — the server never
+seeds demo players or matches on start. Back up with
+`mongodump --uri="$MONGO_URI" --gzip --out=backups/<date>` (`backups/` is git-ignored).
 
 ## API
 

@@ -9,8 +9,6 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "reset-demo": "node scripts/reset-demo.js",
-    "wipe-data": "node scripts/wipe-data.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

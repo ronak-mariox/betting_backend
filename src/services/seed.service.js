@@ -179,21 +179,20 @@ async function seedPlatform() {
 /**
  * Seeds the demo book for the panels and the app, once: skipped if any
  * player already exists (a real or previously-seeded platform), and in
- * production unless SEED_DEMO_DATA=true. `npm run reset-demo` wipes the
- * database back to the demo logins and runs this again.
+ * production unless SEED_DEMO_DATA=true.
  */
 async function seedAdminDemoData() {
-  // SEED_DEMO_DATA=false keeps an emptied database empty (see scripts/wipe-data.js).
+  // SEED_DEMO_DATA=false keeps the database as it is (no demo players or matches).
   if (process.env.SEED_DEMO_DATA === 'false') return;
   if (env.nodeEnv === 'production' && process.env.SEED_DEMO_DATA !== 'true') return;
   await withDemoSeedLock(seedDemoBook);
 }
 
 /**
- * The dev server seeds on boot and `npm run reset-demo` wipes + seeds from a
- * separate process; a nodemon restart during a reset used to run both at
- * once and leave half the demo book behind. Both now take this lock (a
- * single Mongo document) and back off while the other holds it. A lock older
+ * Two server processes booting together (e.g. a nodemon restart while
+ * another instance is still seeding) could both seed and leave half the demo
+ * book behind. Seeding takes this lock (a single Mongo document) and backs
+ * off while another process holds it. A lock older
  * than LOCK_TTL_MS is treated as abandoned (a crashed run).
  */
 const LOCK_ID = 'demo-seed';
@@ -211,7 +210,7 @@ async function withDemoSeedLock(fn, { wait = false } = {}) {
       break;
     } catch (err) {
       if (err.code !== 11000) throw err;
-      // Re-entrant: reset-demo holds the lock while its bootstrap seeds.
+      // Re-entrant: a caller already holding the lock can seed inside it.
       // eslint-disable-next-line no-await-in-loop
       if (await locks.findOne({ _id: LOCK_ID, pid: process.pid })) return fn().then(() => true);
       if (!wait) {
