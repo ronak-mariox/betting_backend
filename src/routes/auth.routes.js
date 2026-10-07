@@ -100,6 +100,35 @@ router.post(
   authController.changePassword,
 );
 
+/** Tighter than authLimiter: each request can send an email. */
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: env.nodeEnv === 'production' ? 5 : 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: 'Too many reset attempts, please try again later' } },
+});
+
+router.post(
+  '/forgot-password',
+  resetLimiter,
+  [body('username').trim().notEmpty().withMessage('Username is required').isLength({ max: 32 })],
+  validate,
+  authController.forgotPassword,
+);
+
+router.post(
+  '/reset-password',
+  authLimiter,
+  [
+    body('username').trim().notEmpty().withMessage('Username is required').isLength({ max: 32 }),
+    body('code').trim().matches(/^\d{6}$/).withMessage('Enter the 6-digit code'),
+    body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
+  ],
+  validate,
+  authController.resetPassword,
+);
+
 router.get('/sessions', authenticate, authController.listSessions);
 router.delete(
   '/sessions/:id',

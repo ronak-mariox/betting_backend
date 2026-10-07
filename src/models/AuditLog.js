@@ -28,6 +28,8 @@ const auditLogSchema = new Schema(
         'register',
         'profile_updated',
         'password_changed',
+        'password_reset_requested',
+        'password_reset',
         'account_created',
         'account_updated',
         'account_suspended',

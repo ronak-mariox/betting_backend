@@ -165,11 +165,12 @@ const ROLLUPS = {
   },
   // Bets: how many, what was staked, and how they ended.
   betting: {
-    start: () => ({ bets: 0, stake: 0, won: 0, lost: 0, cashedOut: 0, open: 0 }),
+    start: () => ({ bets: 0, stake: 0, won: 0, lost: 0, cashedOut: 0, open: 0, void: 0 }),
     add: (bucket, row) => {
       bucket.bets += 1;
-      bucket.stake += Number(row.amount) || 0;
-      const outcome = { Won: 'won', Lost: 'lost', 'Cashed Out': 'cashedOut', Pending: 'open' }[row.status];
+      // A voided bet is counted, but its stake never counted as turnover.
+      if (row.status !== 'Void') bucket.stake += Number(row.amount) || 0;
+      const outcome = { Won: 'won', Lost: 'lost', 'Cashed Out': 'cashedOut', Pending: 'open', Void: 'void' }[row.status];
       if (outcome) bucket[outcome] += 1;
     },
   },

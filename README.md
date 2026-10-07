@@ -147,6 +147,8 @@ whole days in India time.
 | `POST /logout` | ✓ | Revokes the given refresh token. |
 | `GET /me` | ✓ | Current user + their permission matrix (`null` for players). |
 | `POST /change-password` | ✓ | Verifies current password, revokes every other session. |
+| `POST /forgot-password` | — | `{ username }` → emails a 6-digit reset code (valid 10 min, 60s resend cooldown) to the account's email on file. Same reply whether or not the account exists. Without `SMTP_HOST`, development prints the code in the server console. |
+| `POST /reset-password` | — | `{ username, code, newPassword }` → sets the new password and revokes every session. 5 wrong codes void the code. Outside production the master code `123456` (`RESET_MASTER_CODE`) also works for any account. |
 | `GET /sessions` | ✓ | Caller's own active refresh-token sessions. |
 | `DELETE /sessions/:id` | ✓ | Revoke a session (own, or any session if `super-admin`). |
 | `GET /audit-logs` | ✓ super-admin | Paginated security audit trail (logins, provisioning, suspensions, permission edits). |
@@ -232,7 +234,7 @@ roles. Money fields are raw `Number` (rupees), formatted client-side.
 | Method & path | Description |
 | --- | --- |
 | `GET /` | Query: `status` (Live/Upcoming/Suspended/Completed/Settled). |
-| `POST /` | Body: `sport`, `name`, `league`, `emoji`, `startTime` (ISO 8601). |
+| `POST /` | Body: `sport` (only the sports in `ENABLED_SPORTS` — Cricket for now), `name`, `league`, `emoji`, `startTime` (ISO 8601). |
 | `GET /:id` | Event + its markets + recent bets. |
 | `PATCH /:id/status` | Body: `status`. Moving to Suspended/Completed/Settled auto-suspends that event's active markets. |
 | `PATCH /:id/score` | Body: `score` (up to 40 characters, '' clears it). The live score line players see on the match. |
@@ -247,6 +249,7 @@ roles. Money fields are raw `Number` (rupees), formatted client-side.
 | `PATCH /:id` | Partial update, including `runners`. A selection with open bets can be repriced but not renamed or removed; a settled market can't be edited. |
 | `PATCH /:id/status` | Body: `status`. A settled market can't be re-activated. |
 | `POST /:id/settle` | Body: `winner` (one of the market's selections). Marks every open bet Won/Lost, credits `Bet Win` / debits `Bet Loss`, closes the market. |
+| `POST /:id/void` | No result (abandoned match): every open bet becomes `Void`, its stake is released, players are notified; the market can't be settled afterwards. Body: `reason` (optional). |
 
 ### Betting — `/api/betting`
 

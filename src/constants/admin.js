@@ -5,6 +5,9 @@ const TRANSACTION_STATUSES = ['Pending', 'Completed', 'Failed'];
 const WALLET_REQUEST_KINDS = ['deposit', 'withdrawal'];
 const WALLET_REQUEST_STATUSES = ['Pending', 'Approved', 'Rejected'];
 
+/** Sports players can bet on for now; events for anything else can't be created. */
+const ENABLED_SPORTS = ['Cricket'];
+
 const EVENT_STATUSES = ['Live', 'Upcoming', 'Suspended', 'Completed', 'Settled'];
 const MARKET_STATUSES = ['Active', 'Suspended'];
 const BET_STATUSES = ['Pending', 'Won', 'Lost', 'Void', 'Cashed Out'];
@@ -39,6 +42,7 @@ module.exports = {
   TRANSACTION_STATUSES,
   WALLET_REQUEST_KINDS,
   WALLET_REQUEST_STATUSES,
+  ENABLED_SPORTS,
   EVENT_STATUSES,
   MARKET_STATUSES,
   BET_STATUSES,

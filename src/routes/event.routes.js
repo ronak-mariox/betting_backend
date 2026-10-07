@@ -3,7 +3,7 @@ const { body, param, query } = require('express-validator');
 const eventController = require('../controllers/event.controller');
 const validate = require('../middleware/validate');
 const { authenticate, authorize } = require('../middleware/auth');
-const { EVENT_STATUSES } = require('../constants/admin');
+const { EVENT_STATUSES, ENABLED_SPORTS } = require('../constants/admin');
 
 const router = Router();
 router.use(authenticate, authorize('super-admin'));
@@ -13,7 +13,7 @@ router.get('/', [query('status').optional().isIn(EVENT_STATUSES)], validate, eve
 router.post(
   '/',
   [
-    body('sport').trim().notEmpty(),
+    body('sport').trim().isIn(ENABLED_SPORTS).withMessage(`Only ${ENABLED_SPORTS.join(', ')} events can be created right now`),
     body('name').trim().notEmpty(),
     body('league').optional().isString(),
     body('emoji').optional().isString(),

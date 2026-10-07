@@ -9,6 +9,7 @@ const WalletRequest = require('../models/WalletRequest');
 const Settings = require('../models/Settings');
 const ApiError = require('../utils/ApiError');
 const notificationService = require('./notification.service');
+const { ENABLED_SPORTS } = require('../constants/admin');
 
 /** Cash-out offers keep a 5% margin, like the app's design copy implies. */
 const CASH_OUT_MARGIN = 0.95;
@@ -92,7 +93,8 @@ const toMatch = (event, markets) => ({
 
 /** Live and upcoming events with at least one open market — the app's match feed. */
 async function listMatches() {
-  const events = await Event.find({ status: { $in: ['Live', 'Upcoming'] } }).sort({ status: 1, startTime: 1 }).lean();
+  // Only the sports open for betting reach the app (cricket for now).
+  const events = await Event.find({ status: { $in: ['Live', 'Upcoming'] }, sport: { $in: ENABLED_SPORTS } }).sort({ status: 1, startTime: 1 }).lean();
   const markets = await Market.find({ event: { $in: events.map((e) => e._id) }, status: 'Active' }).lean();
   return events
     .map((event) => toMatch(event, markets.filter((m) => String(m.event) === String(event._id))))
@@ -313,4 +315,49 @@ async function settleMarket(marketId, winner) {
   return { market, settled: bets.length, won, lost };
 }
 
-module.exports = { runnersFor, reservedFor, availableFor, listMatches, getMatch, placeBet, listBets, cashOut, settleMarket };
+/**
+ * No result (abandoned match, wrong market): every open bet is voided and its
+ * stake released — nothing was debited, so no ledger entry is needed. Claims
+ * the market like a settlement does, so it can't be settled afterwards.
+ */
+async function voidMarket(marketId, reason = '') {
+  const existing = await Market.findById(marketId);
+  if (!existing) throw ApiError.notFound('Market not found');
+  if (existing.winner) throw ApiError.conflict('Market already settled');
+  const event = await Event.findById(existing.event);
+
+  const market = await Market.findOneAndUpdate(
+    { _id: marketId, winner: { $in: ['', null] } },
+    { $set: { winner: 'Void', settledAt: new Date(), status: 'Suspended', exposure: 0 } },
+    { returnDocument: 'after' },
+  );
+  if (!market) throw ApiError.conflict('Market already settled');
+
+  const openBets = await Bet.find({ market: market._id, status: 'Pending' });
+  let voided = 0;
+  for (const open of openBets) {
+    // eslint-disable-next-line no-await-in-loop
+    const bet = await Bet.findOneAndUpdate(
+      { _id: open._id, status: 'Pending' },
+      { $set: { status: 'Void', payout: open.amount, settledAt: new Date() } },
+      { returnDocument: 'after' },
+    );
+    if (!bet) continue; // eslint-disable-line no-continue
+    voided += 1;
+    // eslint-disable-next-line no-await-in-loop
+    await notificationService.notifyPlayer({
+      user: bet.user,
+      category: 'bet',
+      link: 'bets',
+      source: `bet:${bet._id}`,
+      emoji: '↩️',
+      title: 'Bet Void',
+      body: `${bet.selection} bet (${event?.name || market.name}) — ${reason || 'no result'}. Your ₹${bet.amount.toLocaleString('en-IN')} stake is released.`,
+    });
+  }
+  const released = openBets.reduce((sum, b) => sum + b.amount, 0);
+  if (event) await Event.updateOne({ _id: event._id }, { $inc: { exposure: -released } });
+  return { market, voided, released };
+}
+
+module.exports = { runnersFor, reservedFor, availableFor, listMatches, getMatch, placeBet, listBets, cashOut, settleMarket, voidMarket };

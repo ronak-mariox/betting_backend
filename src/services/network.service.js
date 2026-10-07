@@ -37,7 +37,8 @@ async function loadMetrics(userIds) {
   const lastMonth = monthStart(-1);
   const [bets, commissions, flags] = await Promise.all([
     Bet.aggregate([
-      { $match: { user: { $in: toObjectIds(userIds) } } },
+      // Voided bets never counted: nothing was staked in the end.
+      { $match: { user: { $in: toObjectIds(userIds) }, status: { $ne: 'Void' } } },
       {
         $group: {
           _id: '$user',

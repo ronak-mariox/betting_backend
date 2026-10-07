@@ -45,7 +45,7 @@ async function agentBreakdown(tree, downline, today) {
   const [accounts, todayBets, openBets, pending] = await Promise.all([
     User.find({ _id: { $in: agentIds } }, 'name username status commissionRate walletBalance').lean(),
     Bet.aggregate([
-      { $match: { user: { $in: playerIds }, createdAt: { $gte: today } } },
+      { $match: { user: { $in: playerIds }, createdAt: { $gte: today }, status: { $ne: 'Void' } } },
       { $group: { _id: '$user', bets: { $sum: 1 }, stake: { $sum: '$amount' } } },
     ]),
     Bet.aggregate([
@@ -140,7 +140,7 @@ async function getMyDashboard(actor) {
       User.find({ _id: { $in: playerIds } }, 'status kyc createdAt').lean(),
       Settings.findById('main').lean(),
       Bet.aggregate([
-        { $match: { user: { $in: playerIds }, createdAt: { $gte: weekStart } } },
+        { $match: { user: { $in: playerIds }, createdAt: { $gte: weekStart }, status: { $ne: 'Void' } } },
         {
           $group: {
             _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } },

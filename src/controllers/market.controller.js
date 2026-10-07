@@ -26,10 +26,15 @@ const suspendAll = asyncHandler(async (_req, res) => {
   res.json(result);
 });
 
+const voidMarket = asyncHandler(async (req, res) => {
+  // eslint-disable-next-line global-require
+  res.json(await require('../services/playerBet.service').voidMarket(req.params.id, req.body.reason));
+});
+
 const settle = asyncHandler(async (req, res) => {
   // eslint-disable-next-line global-require
   res.json(await require('../services/playerBet.service').settleMarket(req.params.id, req.body.winner));
 });
 
 module.exports = {
-  settle, list, create, update, updateStatus, suspendAll };
+  settle, voidMarket, list, create, update, updateStatus, suspendAll };

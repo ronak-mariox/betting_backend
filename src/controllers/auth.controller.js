@@ -9,6 +9,7 @@ const tokenService = require('../services/token.service');
 const permissionService = require('../services/permission.service');
 const auditService = require('../services/audit.service');
 const notificationService = require('../services/notification.service');
+const passwordResetService = require('../services/passwordReset.service');
 const { verifyPassword, hashPassword } = require('../services/password.service');
 const { ROLE_TO_ROLE_KEY } = require('../constants/permissions');
 
@@ -142,6 +143,23 @@ const changePassword = asyncHandler(async (req, res) => {
   res.json({ accessToken, refreshToken });
 });
 
+/** Same answer whether or not the account exists, so this can't be used to discover usernames. */
+const forgotPassword = asyncHandler(async (req, res) => {
+  const user = await passwordResetService.requestReset({ username: req.body.username, ip: requestMeta(req).ip });
+  if (user) await auditService.record({ actor: user, action: 'password_reset_requested', target: user, req });
+  res.json({ message: 'If that account has an email on file, a reset code has been sent to it.' });
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+  const { username, code, newPassword } = req.body;
+  const user = await passwordResetService.resetPassword({ username, code, newPassword });
+
+  await auditService.record({ actor: user, action: 'password_reset', target: user, req });
+  await notificationService.notifyPasswordChanged({ user });
+
+  res.json({ message: 'Password updated. Please sign in with your new password.' });
+});
+
 const listSessions = asyncHandler(async (req, res) => {
   const sessions = await RefreshToken.find({ user: req.user._id, revokedAt: null })
     .sort({ createdAt: -1 })
@@ -197,6 +215,8 @@ module.exports = {
   me,
   updateMe,
   changePassword,
+  forgotPassword,
+  resetPassword,
   listSessions,
   revokeSession,
   auditLogs,

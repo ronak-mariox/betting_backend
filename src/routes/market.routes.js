@@ -56,6 +56,13 @@ router.patch(
 );
 
 router.post(
+  '/:id/void',
+  [param('id').isMongoId(), body('reason').optional().isString().trim().isLength({ max: 120 })],
+  validate,
+  marketController.voidMarket,
+);
+
+router.post(
   '/:id/settle',
   [param('id').isMongoId(), body('winner').isString().trim().notEmpty()],
   validate,
