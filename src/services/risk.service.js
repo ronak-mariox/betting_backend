@@ -26,7 +26,7 @@ const getExposure = async () => {
 
 const getPanels = async () => {
   const [flaggedUsers, patterns, largePendingRequests] = await Promise.all([
-    FlaggedUser.find({ active: true }).populate('user', 'name username').sort({ score: -1 }).limit(50),
+    FlaggedUser.find({ active: true }).populate('user', 'name username role').sort({ score: -1 }).limit(50),
     SuspiciousPattern.find({ resolved: false }).populate('relatedUsers', 'name username').sort({ detectedAt: -1 }).limit(50),
     WalletRequest.find({ status: 'Pending', amount: { $gte: LARGE_PENDING_THRESHOLD } })
       .populate('user', 'name username')

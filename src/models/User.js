@@ -67,6 +67,13 @@ const userSchema = new Schema(
       unique: true,
       sparse: true,
     },
+    /** Player-only: the partner (affiliate) whose code was used at sign-up; drives the partner's volume and revenue share. */
+    partner: {
+      type: Schema.Types.ObjectId,
+      ref: 'Partner',
+      default: null,
+      index: true,
+    },
     /** Player-only: the account whose referral code was used at sign-up, if any. */
     referredBy: {
       type: Schema.Types.ObjectId,

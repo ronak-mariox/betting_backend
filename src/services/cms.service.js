@@ -10,8 +10,12 @@ const listContent = async ({ kind }) => {
 
 const createContent = async ({ actor, ...data }) => CmsContent.create({ ...data, createdBy: actor._id });
 
+/** Fields an edit may change; `views` is counted from the app and `kind` is fixed at creation. */
+const EDITABLE = ['title', 'body', 'status', 'target'];
+
 const updateContent = async (id, updates) => {
-  const content = await CmsContent.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
+  const allowed = Object.fromEntries(EDITABLE.filter((key) => updates[key] !== undefined).map((key) => [key, updates[key]]));
+  const content = await CmsContent.findByIdAndUpdate(id, allowed, { new: true, runValidators: true });
   if (!content) throw ApiError.notFound('CMS content not found');
   return content;
 };

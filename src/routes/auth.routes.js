@@ -140,4 +140,9 @@ router.delete(
 
 router.get('/audit-logs', authenticate, authorize('super-admin'), authController.auditLogs);
 
+// Security console (super-admin): platform-wide sessions and headline figures.
+router.get('/security/stats', authenticate, authorize('super-admin'), authController.securityStats);
+router.get('/security/sessions', authenticate, authorize('super-admin'), authController.allSessions);
+router.post('/security/sessions/revoke-all', authenticate, authorize('super-admin'), authController.revokeAllSessions);
+
 module.exports = router;

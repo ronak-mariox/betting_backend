@@ -30,6 +30,8 @@ const recompute = asyncHandler(async (_req, res) => {
 
 const settle = asyncHandler(async (req, res) => {
   const row = await commissionService.settle({ id: req.params.id, actor: req.user });
+  // The list shows the account's name, so the swapped-in row needs it too.
+  await row.populate('entity', 'name username role');
   res.json({ commission: row });
 });
 

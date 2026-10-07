@@ -71,7 +71,7 @@ const getDashboard = async () => {
     health: {
       providers: providers.length,
       healthyProviders,
-      status: healthyProviders === providers.length ? 'Operational' : 'Degraded',
+      status: providers.length === 0 ? 'No providers' : healthyProviders === providers.length ? 'Operational' : 'Degraded',
     },
     transactions: recentTransactions,
     bets: recentBets,
