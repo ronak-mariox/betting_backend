@@ -41,7 +41,19 @@ router.get('/health', async (_req, res) => {
   const dbMs = Date.now() - started;
   const liveMatches = dbOk ? await Event.countDocuments({ status: 'Live' }) : 0;
   const cpu = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
-  res.json({ status: dbOk ? 'ok' : 'degraded', dbMs, cpu, uptimeSeconds: Math.round(process.uptime()), liveMatches });
+  // eslint-disable-next-line global-require
+  const liveClients = require('../realtime').connectedCount();
+  res.json({ status: dbOk ? 'ok' : 'degraded', dbMs, cpu, uptimeSeconds: Math.round(process.uptime()), liveMatches, liveClients });
+});
+
+/** Public brand (name, tagline, logo, colours) for the panel's theme — the login page needs it before sign-in. */
+router.get('/branding', async (_req, res, next) => {
+  try {
+    // eslint-disable-next-line global-require
+    res.json({ branding: await require('../services/settings.service').getBranding() });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.use('/auth', authRoutes);

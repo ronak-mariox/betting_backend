@@ -132,10 +132,10 @@ async function abilitiesFor(actor, role) {
     ]);
     return { create: below && create, edit: below && edit, suspend: below && suspend };
   }
-  // Staff below the actor: onboarding follows the hierarchy (a franchise adds super agents and
-  // agents, a super agent adds agents); changing or blocking them needs "Manage Sub-Agents".
+  // Staff below the actor (a franchise adds super agents and agents, a super agent adds
+  // agents): adding, changing or blocking them all need "Manage Sub-Agents".
   const manage = isAdmin || (await permissionService.hasPermission(actor.role, 'accountSettings', 'manageSubAgents', 'X'));
-  return { create: below, edit: below && manage, suspend: below && manage };
+  return { create: below && manage, edit: below && manage, suspend: below && manage };
 }
 
 /**

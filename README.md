@@ -368,3 +368,22 @@ requests, high-risk flags, and new support tickets.
 - Login and registration are rate-limited (20 requests / 15 min / IP).
 - Changing a password invalidates every access token issued before the
   change and revokes all refresh tokens.
+
+## Live updates (Socket.IO)
+
+The Diamond feed is REST-only, so the backend polls it (live matches every
+second, `DIAMOND_LIVE_ODDS_MS`) and pushes what changed over Socket.IO on the
+same port as the API. Connect with `io(<server>, { auth: { token: <access token> } })`.
+
+| Event | Sent to | Payload / meaning |
+| --- | --- | --- |
+| `odds` | every client | `{ eventId, markets: [{ _id, name, type, status, maxBet, runners }] }` — only markets whose prices or status changed |
+| `matches:changed` | every client | a match went live / finished or a market opened / closed — refetch `GET /player/matches` |
+| `player:changed` | that player's devices | their wallet or bets changed — refetch them |
+| `admin:changed` | panel (non-player) users | `{ kind: 'bets' \| 'ledger' \| 'wallet' }` — refresh open pages |
+
+Clients may `emit('match:join', eventId)` / `match:leave`. Bets never trust a
+pushed price: the server always takes the market's current odds, and refuses
+bets on feed prices older than 20 s (live). `GET /api/health` reports
+`liveClients`. Running several API servers needs the Socket.IO Redis adapter,
+and only one of them should poll the feed.
