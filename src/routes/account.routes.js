@@ -3,7 +3,14 @@ const { Router } = require('express');
 const { body, param, query } = require('express-validator');
 const accountController = require('../controllers/account.controller');
 const validate = require('../middleware/validate');
-const { authenticate, requireOwnSubtree } = require('../middleware/auth');
+const { authenticate, authorize, requireOwnSubtree } = require('../middleware/auth');
+const { grant } = require('../services/scope.service');
+
+/** Listing / opening accounts: staff only, and only with "User List" (view). */
+const userList = [
+  authorize('super-admin', 'franchise', 'super-agent', 'agent'),
+  grant('userManagement', 'userList', 'V', 'You do not have permission to view users'),
+];
 const { ROLE_ORDER } = require('../constants/roles');
 const { COMMISSION_TYPES, SETTLEMENT_CYCLES, KYC_STATUSES } = require('../constants/admin');
 
@@ -32,6 +39,7 @@ router.get(
     query('limit').optional().isInt({ min: 1, max: 100 }),
   ],
   validate,
+  ...userList,
   accountController.list,
 );
 
@@ -60,7 +68,7 @@ router.post(
   accountController.create,
 );
 
-router.get('/:id', [param('id').isMongoId()], validate, requireOwnSubtree('id'), accountController.getOne);
+router.get('/:id', [param('id').isMongoId()], validate, ...userList, requireOwnSubtree('id'), accountController.getOne);
 
 router.patch(
   '/:id',

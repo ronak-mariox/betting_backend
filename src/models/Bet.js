@@ -23,4 +23,16 @@ const betSchema = new Schema(
 
 betSchema.index({ createdAt: -1 });
 
+/** Live updates: the owner's app and open panel pages refresh when bets change (see realtime.js). */
+function announce(doc) {
+  if (!doc) return;
+  // eslint-disable-next-line global-require
+  const realtime = require('../realtime');
+  realtime.emitPlayerChanged(doc.user);
+  realtime.emitStaffChanged('bets');
+}
+betSchema.post('save', announce);
+betSchema.post('findOneAndUpdate', announce);
+betSchema.post('insertMany', (docs) => [].concat(docs).forEach(announce));
+
 module.exports = mongoose.model('Bet', betSchema);

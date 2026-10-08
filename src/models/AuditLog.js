@@ -30,6 +30,7 @@ const auditLogSchema = new Schema(
         'password_changed',
         'password_reset_requested',
         'password_reset',
+        'bet_voided',
         'account_created',
         'account_updated',
         'account_suspended',
