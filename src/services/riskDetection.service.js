@@ -6,6 +6,7 @@ const User = require('../models/User');
 const FlaggedUser = require('../models/FlaggedUser');
 const SuspiciousPattern = require('../models/SuspiciousPattern');
 const notificationService = require('./notification.service');
+const { money } = require('../utils/money');
 
 /**
  * Risk detection: scans real activity and fills the Risk console's
@@ -32,7 +33,7 @@ const RULES = {
   bruteForce: { hours: 1, min: 10 },
 };
 
-const rupees = (n) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+const rupees = money;
 const since = (ms) => new Date(Date.now() - ms);
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 

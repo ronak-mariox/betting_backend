@@ -2,6 +2,7 @@ const os = require('os');
 const mongoose = require('mongoose');
 const Event = require('../models/Event');
 const { Router } = require('express');
+const { optionalAuthenticate } = require('../middleware/auth');
 const authRoutes = require('./auth.routes');
 const accountRoutes = require('./account.routes');
 const permissionRoutes = require('./permission.routes');
@@ -21,7 +22,6 @@ const supportRoutes = require('./support.routes');
 const settingsRoutes = require('./settings.routes');
 const dashboardRoutes = require('./dashboard.routes');
 const networkRoutes = require('./network.routes');
-const kycRoutes = require('./kyc.routes');
 const playerRoutes = require('./player.routes');
 
 const router = Router();
@@ -56,6 +56,18 @@ router.get('/branding', async (_req, res, next) => {
   }
 });
 
+/** Support contacts, currency, marquee, banners… for the app / panels (see appConfig.service.js). */
+// Public (the app's Help screen and the login page need it); staff announcements only with a staff token.
+router.get('/app-config', optionalAuthenticate, async (req, res, next) => {
+  try {
+    const audience = req.user && req.user.role !== 'player' ? 'staff' : 'player';
+    // eslint-disable-next-line global-require
+    res.json({ config: await require('../services/appConfig.service').getAppConfig(audience) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.use('/auth', authRoutes);
 router.use('/accounts', accountRoutes);
 router.use('/permissions', permissionRoutes);
@@ -75,7 +87,6 @@ router.use('/support', supportRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/network', networkRoutes);
-router.use('/kyc', kycRoutes);
 router.use('/player', playerRoutes);
 
 module.exports = router;

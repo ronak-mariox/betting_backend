@@ -17,6 +17,116 @@ const getSettings = async () => {
   return Settings.findByIdAndUpdate('main', { $setOnInsert: { _id: 'main' } }, { new: true, upsert: true });
 };
 
+/**
+ * The settings document, kept in memory so hot paths (every bet, the 1 s feed
+ * poll, "today" boundaries) read it synchronously. Reloaded after every save
+ * here and every 30 s (another server may have saved).
+ */
+let cache = null;
+const reloadCache = async () => {
+  cache = (await Settings.findById('main').lean()) || {};
+  return cache;
+};
+/** After a save: reload, and tell the apps / panels to refetch what they show from it. */
+const saved = async () => {
+  await reloadCache();
+  require('../realtime').emitConfigChanged(); // eslint-disable-line global-require
+  // A Diamond key added on the API Keys tab starts the feed without a restart.
+  require('./diamondSync.service').start(); // eslint-disable-line global-require
+};
+/** Last loaded settings ({} before the first load). */
+const cached = () => cache || {};
+/** Loads once at boot and keeps refreshing. */
+const startSettingsCache = async () => {
+  await reloadCache();
+  setInterval(() => reloadCache().catch(() => null), 30000).unref();
+};
+
+/** Secrets stored in a section: never sent back in clear, kept when the form sends them blank / masked. */
+const SECRET_FIELDS = { smtp: ['pass'], sms: ['apiKey'] };
+const CURRENCIES = {
+  INR: '₹',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  AED: 'AED ',
+  BDT: '৳',
+  PKR: 'Rs ',
+  NPR: 'Rs ',
+  LKR: 'Rs ',
+};
+const SMS_PROVIDERS = ['', 'Fast2SMS', 'Twilio'];
+const isTimezone = (tz) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz }); // eslint-disable-line no-new
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Validates / normalises a non-brand section before it replaces the stored one. */
+function cleanSection(section, updates, current) {
+  const out = {};
+  for (const [key, value] of Object.entries(updates || {})) {
+    // Blank / null = not set (a cleared limit is off, not 0).
+    if (value === null || value === undefined || value === '') continue; // eslint-disable-line no-continue
+    out[key] = typeof value === 'string' ? value.trim() : value;
+  }
+  for (const key of SECRET_FIELDS[section] || []) {
+    const sent = updates?.[key];
+    if (sent === null) delete out[key]; // explicit null clears the secret
+    else if (sent === undefined || sent === '' || String(sent).includes('•')) {
+      if (current?.[key]) out[key] = current[key];
+      else delete out[key];
+    }
+  }
+  if (section === 'general') {
+    if (out.currency !== undefined) {
+      out.currency = String(out.currency).toUpperCase();
+      if (!CURRENCIES[out.currency]) throw ApiError.badRequest(`Currency must be one of ${Object.keys(CURRENCIES).join(', ')}`);
+    }
+    if (out.timezone !== undefined && !isTimezone(out.timezone)) {
+      throw ApiError.badRequest('Timezone must be an IANA name like Asia/Kolkata');
+    }
+    if (out.supportEmail !== undefined && !/^\S+@\S+\.\S+$/.test(out.supportEmail)) {
+      throw ApiError.badRequest('Support email is not a valid email address');
+    }
+  }
+  if (section === 'sms' && out.provider !== undefined && !SMS_PROVIDERS.includes(out.provider)) {
+    throw ApiError.badRequest(`SMS provider must be one of ${SMS_PROVIDERS.filter(Boolean).join(', ')}`);
+  }
+  if (section === 'smtp' && out.fromEmail !== undefined && !/^\S+@\S+\.\S+$/.test(out.fromEmail)) {
+    throw ApiError.badRequest('From Email is not a valid email address');
+  }
+  const percents = { exposureLimits: ['autoSuspendPercent', 'warningPercent'], commissionRates: Object.keys(out) };
+  for (const key of (percents[section] || []).filter((k) => out[k] !== undefined)) {
+    const n = Number(out[key]);
+    if (!Number.isFinite(n) || n < 0 || n > 100) throw ApiError.badRequest(`${key} must be between 0 and 100`);
+  }
+  if (section !== 'general' && section !== 'smtp' && section !== 'sms') {
+    for (const [key, value] of Object.entries(out)) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) throw ApiError.badRequest(`${key} must be a positive number`);
+      out[key] = n;
+    }
+  }
+  if (section === 'smtp' && out.port !== undefined) out.port = Number(out.port);
+  if (section === 'sms' && out.otpValidityMinutes !== undefined) out.otpValidityMinutes = Number(out.otpValidityMinutes);
+  return out;
+}
+
+/** The platform's currency: `code` (INR) and the `symbol` amounts are written with. */
+const currency = () => {
+  const code = CURRENCIES[cached().general?.currency] ? cached().general.currency : 'INR';
+  return { code, symbol: CURRENCIES[code] };
+};
+/** The platform's timezone — what "today" means for daily limits, stats and reports. */
+const timezone = () => {
+  const tz = cached().general?.timezone;
+  return tz && isTimezone(tz) ? tz : 'Asia/Kolkata';
+};
+
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 const BRAND_COLORS = ['primaryColor', 'accentColor', 'backgroundColor', 'successColor'];
 /** Brightness a primary / accent colour needs to read on the dark panel (#2196f3 is ~0.5). */
@@ -95,25 +205,26 @@ const getBranding = async () => {
 
 const updateSection = async (section, updates) => {
   if (!SECTIONS.includes(section)) throw ApiError.badRequest(`Unknown settings section: ${section}`);
-  if (section === 'brand') {
-    // Saving one card keeps what the other card stored.
-    const current = (await Settings.findById('main').lean())?.brand || {};
-    // eslint-disable-next-line no-param-reassign
-    updates = { ...current, ...cleanBrand(updates) };
-  }
-  return Settings.findByIdAndUpdate(
+  const stored = (await Settings.findById('main').lean())?.[section] || {};
+  // Brand: saving one card keeps what the other card stored.
+  const next = section === 'brand' ? { ...stored, ...cleanBrand(updates) } : cleanSection(section, updates, stored);
+  const settings = await Settings.findByIdAndUpdate(
     'main',
-    { $set: { [section]: updates } },
+    { $set: { [section]: next } },
     { new: true, upsert: true, runValidators: true },
   );
+  await saved();
+  return settings;
 };
 
 const addApiKey = async ({ name, key }) => {
-  return Settings.findByIdAndUpdate(
+  const settings = await Settings.findByIdAndUpdate(
     'main',
     { $push: { apiKeys: { name, key, status: 'Active', latency: 0 } } },
     { new: true, upsert: true },
   );
+  await saved();
+  return settings;
 };
 
 const updateApiKey = async (keyId, updates) => {
@@ -121,8 +232,15 @@ const updateApiKey = async (keyId, updates) => {
   if (!settings) throw ApiError.notFound('Settings not found');
   const entry = settings.apiKeys.id(keyId);
   if (!entry) throw ApiError.notFound('API key not found');
-  Object.assign(entry, updates);
+  const { name, key, status } = updates;
+  if (name !== undefined) entry.name = String(name).trim();
+  if (key) entry.key = String(key).trim();
+  if (status !== undefined) {
+    if (!['Active', 'Inactive'].includes(status)) throw ApiError.badRequest('Status must be Active or Inactive');
+    entry.status = status;
+  }
   await settings.save();
+  await saved();
   return settings;
 };
 
@@ -133,7 +251,29 @@ const deleteApiKey = async (keyId) => {
     { new: true },
   );
   if (!settings) throw ApiError.notFound('Settings not found');
+  await saved();
   return settings;
 };
 
-module.exports = { getSettings, updateSection, addApiKey, updateApiKey, deleteApiKey, SECTIONS, getBranding };
+/** Records how long the provider behind an API key took to answer (shown on the API Keys tab). */
+const recordApiLatency = async (keyId, latency) => {
+  await Settings.updateOne({ _id: 'main', 'apiKeys._id': keyId }, { $set: { 'apiKeys.$.latency': Math.round(latency) } });
+};
+
+module.exports = {
+  getSettings,
+  updateSection,
+  addApiKey,
+  updateApiKey,
+  deleteApiKey,
+  recordApiLatency,
+  SECTIONS,
+  CURRENCIES,
+  SMS_PROVIDERS,
+  getBranding,
+  cached,
+  reloadCache,
+  startSettingsCache,
+  currency,
+  timezone,
+};

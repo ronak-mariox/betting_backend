@@ -12,18 +12,14 @@ const userList = [
   grant('userManagement', 'userList', 'V', 'You do not have permission to view users'),
 ];
 const { ROLE_ORDER } = require('../constants/roles');
-const { COMMISSION_TYPES, SETTLEMENT_CYCLES, KYC_STATUSES } = require('../constants/admin');
-
 const STAFF_FIELD_RULES = [
   body('businessName').optional().isString().trim().isLength({ max: 80 }),
-  body('creditLimit').optional().isFloat({ min: 0 }).toFloat(),
-  body('commissionRate').optional({ nullable: true }).isFloat({ min: 0, max: 100 }).toFloat(),
-  body('commissionType').optional().isIn(COMMISSION_TYPES),
   body('bettingLimit').optional().isFloat({ min: 0 }).toFloat(),
   body('maxExposure').optional().isFloat({ min: 0 }).toFloat(),
-  body('settlementCycle').optional().isIn(SETTLEMENT_CYCLES),
-  ...['shareHolding', 'matchCommission', 'myMatchCommission', 'sessionCommission', 'mySessionCommission'].map((field) =>
-    body(field).optional({ nullable: true }).isFloat({ min: 0, max: 100 }).toFloat(),
+  body('shareHolding').optional({ nullable: true }).isFloat({ min: 0, max: 100 }).toFloat(),
+  // Session / match commission received from the upline — players and staff alike.
+  ...['matchCommission', 'sessionCommission'].map((field) =>
+    body(field).optional({ nullable: true }).isFloat({ min: 0, max: 100 }).withMessage('Commission must be 0–100%').toFloat(),
   ),
 ];
 
@@ -60,7 +56,6 @@ router.post(
     body('name').optional().isString().trim().isLength({ max: 80 }),
     body('email').optional({ checkFalsy: true }).isEmail().withMessage('Enter a valid email address'),
     phoneRule(),
-    body('kyc').optional({ checkFalsy: true }).isIn(KYC_STATUSES),
     body('dob').optional({ checkFalsy: true }).isISO8601(),
     ...STAFF_FIELD_RULES,
   ],
@@ -80,8 +75,6 @@ router.patch(
     body('city').optional().isString().trim().isLength({ max: 60 }),
     body('state').optional().isString().trim().isLength({ max: 60 }),
     body('dob').optional({ checkFalsy: true }).isISO8601(),
-    body('kyc').optional().isIn(KYC_STATUSES),
-    body('kycRejectionReason').optional().isString().trim().isLength({ max: 200 }),
     ...STAFF_FIELD_RULES,
   ],
   validate,

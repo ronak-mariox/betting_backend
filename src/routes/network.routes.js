@@ -2,7 +2,6 @@ const { Router } = require('express');
 const { body, param, query } = require('express-validator');
 const { grant } = require('../services/scope.service');
 const networkController = require('../controllers/network.controller');
-const { KYC_STATUSES } = require('../constants/admin');
 const validate = require('../middleware/validate');
 const { authenticate, authorize, requireOwnSubtree } = require('../middleware/auth');
 
@@ -25,7 +24,6 @@ router.get(
   [
     query('role').optional().isIn(['franchise', 'super-agent', 'agent', 'player']),
     query('status').optional().isIn(['active', 'suspended']),
-    query('kyc').optional().isIn(KYC_STATUSES),
     query('q').optional().isString().isLength({ max: 100 }),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 100 }),

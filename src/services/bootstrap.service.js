@@ -5,7 +5,6 @@ const { hashPassword } = require('./password.service');
 const permissionService = require('./permission.service');
 const { seedAdminDemoData } = require('./seed.service');
 const { ensureAgentReferralCodes } = require('./account.service');
-const { normalizeLegacyStatuses, backfillProfilesFromKyc } = require('./kyc.service');
 const { backfillPlayerFeeds } = require('./notification.service');
 const { ensurePartnerCodes } = require('./partnership.service');
 
@@ -106,8 +105,6 @@ async function runBootstrap() {
   }
   await ensureAgentReferralCodes();
   await ensurePartnerCodes();
-  await normalizeLegacyStatuses();
-  await backfillProfilesFromKyc();
   try {
     await backfillPlayerFeeds();
   } catch (err) {

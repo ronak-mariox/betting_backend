@@ -8,7 +8,7 @@ const stats = asyncHandler(async (_req, res) => {
 });
 
 const exposure = asyncHandler(async (_req, res) => {
-  res.json({ markets: await riskService.getExposure() });
+  res.json(await riskService.getExposure());
 });
 
 const panels = asyncHandler(async (_req, res) => {

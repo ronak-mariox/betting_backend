@@ -101,42 +101,45 @@ async function getSubtreeIds(rootId) {
 
 const UNIQUE_RETRY_LIMIT = 5;
 
-const PROFILE_FIELDS = ['name', 'email', 'phone', 'city', 'state', 'dob', 'kyc'];
-const STAFF_FIELDS = [
-  'businessName',
-  'creditLimit',
-  'commissionRate',
-  'commissionType',
-  'bettingLimit',
-  'maxExposure',
-  'settlementCycle',
-  'shareHolding',
-  'matchCommission',
-  'myMatchCommission',
-  'sessionCommission',
-  'mySessionCommission',
-];
+const PROFILE_FIELDS = ['name', 'email', 'phone', 'city', 'state', 'dob'];
+const STAFF_FIELDS = ['businessName', 'bettingLimit', 'maxExposure', 'shareHolding'];
+/** Staff terms only the Commission Settings grant may set. */
+const GRANTED_FIELDS = ['shareHolding'];
+/**
+ * Session / match commission an account receives (see commission.service.js).
+ * Its direct upline sets them for players and staff alike, never above the
+ * upline's own rate.
+ */
+const COMMISSION_FIELDS = ['matchCommission', 'sessionCommission'];
+const COMMISSION_LABEL = { matchCommission: 'Match', sessionCommission: 'Session' };
 
-/** Copies only the editable profile (and, for staff, business) fields present in `payload`. */
-/** The terms an account earns on — set by whoever holds the Commission Settings grant. */
-const COMMISSION_FIELDS = [
-  'commissionRate',
-  'commissionType',
-  'settlementCycle',
-  'shareHolding',
-  'matchCommission',
-  'myMatchCommission',
-  'sessionCommission',
-  'mySessionCommission',
-];
-
+/** Copies only the editable profile, commission (and, for staff, business) fields present in `payload`. */
 function pickProfile(payload, role) {
-  const fields = role === 'player' ? PROFILE_FIELDS : [...PROFILE_FIELDS, ...STAFF_FIELDS];
+  const fields = [...PROFILE_FIELDS, ...COMMISSION_FIELDS, ...(role === 'player' ? [] : STAFF_FIELDS)];
   const out = {};
   for (const field of fields) {
     if (payload[field] !== undefined) out[field] = payload[field] === '' && field === 'dob' ? null : payload[field];
   }
   return out;
+}
+
+/**
+ * An account can be given at most the commission its upline receives.
+ * Super-admin is the top: what it gives a franchise is the whole rate.
+ */
+function assertCommissionWithin(parent, changes) {
+  for (const field of COMMISSION_FIELDS) {
+    if (changes[field] === undefined) continue; // eslint-disable-line no-continue
+    const value = Number(changes[field]) || 0;
+    changes[field] = value;
+    if (!parent || parent.role === 'super-admin') continue; // eslint-disable-line no-continue
+    const max = Number(parent[field]) || 0;
+    if (value > max) {
+      throw ApiError.badRequest(
+        `${COMMISSION_LABEL[field]} commission ${value}% se zyada nahi ho sakta — upline (${parent.username}) ko ${max}% milta hai`,
+      );
+    }
+  }
 }
 
 /** Player-only shareable code, e.g. "RAHUL2318" — derived from the username. */
@@ -239,12 +242,13 @@ async function ensureAgentReferralCodes() {
  */
 async function createManagedAccount(creator, payload, { canSetCommission = true } = {}) {
   const { role, username, password, parentId, ...profile } = payload;
-  if (!canSetCommission) for (const field of COMMISSION_FIELDS) delete profile[field];
+  if (!canSetCommission) for (const field of GRANTED_FIELDS) delete profile[field];
 
   if (!ROLE_ORDER.includes(role)) throw ApiError.badRequest('Unknown role');
   assertCanCreateRole(creator.role, role);
 
   const parent = await resolveParent({ creator, targetRole: role, parentId });
+  assertCommissionWithin(parent, profile);
 
   const normalizedUsername = username.trim().toLowerCase();
   const existing = await User.findOne({ username: normalizedUsername });
@@ -274,8 +278,10 @@ async function createManagedAccount(creator, payload, { canSetCommission = true 
  * requireOwnSubtree; this enforces who may edit what:
  *   - players: the live userManagement.editUser grant;
  *   - staff below the actor: the accountSettings.manageSubAgents grant
- *     (super-admin always). Commission terms are the upline's to set, so
- *     they change only with accountSettings.commissionSettings X.
+ *     (super-admin always). Share holding changes only with
+ *     accountSettings.commissionSettings X;
+ *   - session / match commission: also the direct upline, which passes it
+ *     down, within its own rate.
  * Nobody edits their own account here — that's PATCH /auth/me.
  */
 async function updateManagedAccount(actor, account, payload, { canEditPlayers, canManageStaff = false, canSetCommission = false }) {
@@ -284,7 +290,9 @@ async function updateManagedAccount(actor, account, payload, { canEditPlayers, c
   }
   if (account.role === 'super-admin') throw ApiError.forbidden('super-admin accounts cannot be edited here');
   const isAdmin = actor.role === 'super-admin';
-  if (account.role === 'player' ? !canEditPlayers : !(isAdmin || canManageStaff)) {
+  const canEdit = account.role === 'player' ? canEditPlayers : isAdmin || canManageStaff;
+  const isDirectUpline = String(account.parent) === String(actor._id);
+  if (!canEdit && !isDirectUpline) {
     throw ApiError.forbidden(
       account.role === 'player'
         ? 'You do not have permission to edit users'
@@ -292,9 +300,15 @@ async function updateManagedAccount(actor, account, payload, { canEditPlayers, c
     );
   }
 
-  const changes = pickProfile(payload, account.role);
+  let changes = pickProfile(payload, account.role);
+  // Without the edit grant the direct upline may still set the commission it passes down.
+  if (!canEdit) changes = Object.fromEntries(Object.entries(changes).filter(([field]) => COMMISSION_FIELDS.includes(field)));
   if (account.role !== 'player' && !isAdmin && !canSetCommission) {
-    for (const field of COMMISSION_FIELDS) delete changes[field];
+    for (const field of GRANTED_FIELDS) delete changes[field];
+  }
+  if (COMMISSION_FIELDS.some((field) => changes[field] !== undefined)) {
+    const parent = account.parent ? await User.findById(account.parent).select('role username matchCommission sessionCommission') : null;
+    assertCommissionWithin(parent, changes);
   }
   Object.assign(account, changes);
   await account.save();
@@ -305,6 +319,7 @@ module.exports = {
   updateManagedAccount,
   PROFILE_FIELDS,
   STAFF_FIELDS,
+  COMMISSION_FIELDS,
   IMMEDIATE_PARENT_ROLE,
   assertCanCreateRole,
   resolveParent,

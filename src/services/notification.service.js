@@ -2,9 +2,9 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const CmsContent = require('../models/CmsContent');
 const WalletRequest = require('../models/WalletRequest');
-const KycSubmission = require('../models/KycSubmission');
 const Bet = require('../models/Bet');
 const ApiError = require('../utils/ApiError');
+const { money } = require('../utils/money');
 
 const DEFAULT_PAGE_LIMIT = 50;
 const PROMO_WINDOW_DAYS = 30;
@@ -34,7 +34,7 @@ const clearAll = async ({ recipientRole = 'super-admin' } = {}) => {
 
 /**
  * The app's Settings switches, stored on User.preferences. A category with
- * no switch (KYC, welcome) is always delivered; a switch never touched is on.
+ * no switch (welcome) is always delivered; a switch never touched is on.
  */
 const PREFERENCE_FOR = {
   bet: 'notifyLive',
@@ -52,7 +52,7 @@ const wants = (user, category) => {
   return value !== false;
 };
 
-const rupees = (amount) => `₹${Math.round(Math.abs(Number(amount) || 0)).toLocaleString('en-IN')}`;
+const rupees = money;
 
 /** What each event says, shared by the live hooks and the one-time backfill of older history. */
 const compose = {
@@ -85,18 +85,6 @@ const compose = {
       body: won
         ? `${bet.selection} bet — ${rupees(bet.payout - bet.amount)} winnings added to your wallet`
         : `${bet.selection} bet${eventName ? ` (${eventName})` : ''} — ${rupees(bet.amount)} stake lost`,
-    };
-  },
-  kycReviewed: (submission) => {
-    const verified = submission.status === 'Verified';
-    const reason = submission.rejectionReason ? ` Reason: ${submission.rejectionReason}` : '';
-    return {
-      category: 'kyc',
-      link: 'kyc',
-      source: `kyc:${submission._id}`,
-      emoji: verified ? '✅' : '🪪',
-      title: verified ? 'KYC Verified' : 'KYC Rejected',
-      body: verified ? 'Your account is verified. Withdrawals are now open.' : `Please submit your documents again.${reason}`,
     };
   },
   content: (content) => ({
@@ -136,7 +124,6 @@ const notifyPlayer = async ({ user, title, body = '', category = 'general', emoj
 
 const notifyWalletDecision = (request) => notifyPlayer({ user: request.user, ...compose.walletDecision(request) });
 const notifyBetSettled = (bet, eventName) => notifyPlayer({ user: bet.user, ...compose.betSettled(bet, eventName) });
-const notifyKycReviewed = (submission) => notifyPlayer({ user: submission.user, ...compose.kycReviewed(submission) });
 
 /** A credit / debit made on the panel (manual entry, fund transfer), outside the request queue. */
 const notifyWalletAdjustment = ({ user, amount, from = '', note = '' }) =>
@@ -202,15 +189,17 @@ const notifyWelcome = ({ user }) =>
   notifyPlayer({
     user,
     category: 'general',
-    link: 'kyc',
+    link: 'wallet',
     source: 'welcome',
     emoji: '🎉',
     title: 'Welcome to BetPro',
-    body: 'Complete your KYC to start depositing and withdrawing.',
+    body: 'Add money to your wallet to start betting.',
   });
 
 /** Content the admin published for players (CMS → Announcements / Promotions / Notices). */
 const forPlayers = (content) => !content.target || /^(all|everyone)$/i.test(content.target.trim()) || /player|user/i.test(content.target);
+/** Content for the staff panels (target All or Staff). */
+const forStaff = (content) => !content.target || /^(all|everyone)$/i.test(content.target.trim()) || /staff|agent|franchise/i.test(content.target);
 
 /**
  * Brings the player's feed in line with what's published in the CMS right
@@ -292,7 +281,7 @@ const markAllReadForPlayer = async (player) => {
 
 /**
  * Players who were active before the app had a real feed start with their
- * own history in it (reviewed requests, settled bets, KYC decisions), marked
+ * own history in it (reviewed requests, settled bets), marked
  * read and dated when each thing happened. Runs on boot; an account that
  * already has a feed is left alone.
  */
@@ -302,15 +291,13 @@ const backfillPlayerFeeds = async () => {
   let added = 0;
   for (const player of players) {
     /* eslint-disable no-await-in-loop */
-    const [requests, bets, reviews] = await Promise.all([
+    const [requests, bets] = await Promise.all([
       WalletRequest.find({ user: player._id, status: { $in: ['Approved', 'Rejected'] } }).sort({ createdAt: -1 }).limit(20),
       Bet.find({ user: player._id, status: { $in: ['Won', 'Lost'] } }).populate('event', 'name').sort({ createdAt: -1 }).limit(20),
-      KycSubmission.find({ user: player._id, status: { $in: ['Verified', 'Rejected'] } }, '-front.data -back.data').sort({ createdAt: -1 }).limit(5),
     ]);
     const rows = [
       ...requests.map((r) => ({ ...compose.walletDecision(r), at: r.reviewedAt || r.updatedAt })),
       ...bets.map((b) => ({ ...compose.betSettled(b, b.event?.name), at: b.settledAt || b.updatedAt })),
-      ...reviews.map((k) => ({ ...compose.kycReviewed(k), at: k.reviewedAt || k.updatedAt })),
     ];
     for (const row of rows) await notifyPlayer({ user: player._id, unread: false, ...row });
     added += rows.length;
@@ -328,7 +315,6 @@ module.exports = {
   notifyWalletDecision,
   notifyWalletAdjustment,
   notifyBetSettled,
-  notifyKycReviewed,
   notifyMatchLive,
   notifyLogin,
   notifyPasswordChanged,
@@ -337,4 +323,6 @@ module.exports = {
   markReadForPlayer,
   markAllReadForPlayer,
   backfillPlayerFeeds,
+  forPlayers,
+  forStaff,
 };

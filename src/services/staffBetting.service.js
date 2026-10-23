@@ -8,6 +8,7 @@ const ApiError = require('../utils/ApiError');
 const notificationService = require('./notification.service');
 const auditService = require('./audit.service');
 const { loadTree, descendants } = require('./tree.service');
+const { money } = require('../utils/money');
 
 /**
  * Staff (franchise / super-agent / agent) views of the betting side, each
@@ -76,7 +77,7 @@ async function downlineAnalytics(actor) {
   const players = await downlinePlayers(actor);
   const months = monthKeys();
   const since = new Date(`${months[0]}-01T00:00:00+05:30`);
-  const month = { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'Asia/Kolkata' } };
+  const month = { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: require('../utils/time').timezone() } };
 
   const [revenue, volume, signups, totals] = await Promise.all([
     Transaction.aggregate([
@@ -135,7 +136,7 @@ async function voidBet(actor, betId, reason = '') {
     source: `bet:${bet._id}`,
     emoji: '↩️',
     title: 'Bet Void',
-    body: `${bet.selection} bet (${event?.name || 'match'}) was voided${reason ? ` — ${reason}` : ''}. Your ₹${bet.amount.toLocaleString('en-IN')} stake is released.`,
+    body: `${bet.selection} bet (${event?.name || 'match'}) was voided${reason ? ` — ${reason}` : ''}. Your ${money(bet.amount)} stake is released.`,
   });
   await auditService.record({ actor, action: 'bet_voided', target: bet.user, metadata: { bet: String(bet._id), amount: bet.amount, reason } });
   return bet;
