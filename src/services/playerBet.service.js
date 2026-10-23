@@ -11,11 +11,15 @@ const ApiError = require('../utils/ApiError');
 const notificationService = require('./notification.service');
 const { ENABLED_SPORTS } = require('../constants/admin');
 
+/** How fresh a feed market's prices must be to take a bet on them. */
+const FEED_LIVE_MAX_AGE_MS = 20 * 1000;
+const FEED_UPCOMING_MAX_AGE_MS = 5 * 60 * 1000;
+
 /** Cash-out offers keep a 5% margin, like the app's design copy implies. */
 const CASH_OUT_MARGIN = 0.95;
 
 const sides = (eventName) => {
-  const [home, away] = String(eventName).split(/\s+vs\.?\s+/i);
+  const [home, away] = String(eventName).split(/\s+(?:vs\.?|v\.?|-)\s+/i);
   return { home: home || eventName, away: away || 'Draw' };
 };
 
@@ -24,7 +28,7 @@ const sides = (eventName) => {
  * to the event's two sides, priced at the market's back / lay odds.
  */
 function runnersFor(market, event) {
-  if (market.runners?.length) return market.runners.map((r) => ({ name: r.name, odds: r.odds }));
+  if (market.runners?.length) return market.runners.map((r) => ({ name: r.name, odds: r.odds, active: r.active !== false }));
   const { home, away } = sides(event.name);
   return [
     { name: home, odds: market.backOdds || 2 },
@@ -74,9 +78,10 @@ async function availableFor(user) {
   return Math.max(0, user.walletBalance - openStake - pendingWithdrawal);
 }
 
-/** Match Odds first (the card's headline prices), then the rest in creation order. */
-const marketOrder = (a, b) =>
-  (b.type === 'Match Odds') - (a.type === 'Match Odds') || new Date(a.createdAt) - new Date(b.createdAt);
+/** Match Odds first (the card's headline prices), then Bookmaker, Tied Match, Fancy; ties by creation order. */
+const MARKET_RANK = { 'Match Odds': 0, Bookmaker: 1, Fancy: 3 };
+const marketRank = (m) => (m.name === 'Tied Match' ? 2 : MARKET_RANK[m.type] ?? 4);
+const marketOrder = (a, b) => marketRank(a) - marketRank(b) || new Date(a.createdAt) - new Date(b.createdAt);
 
 const toMatch = (event, markets) => ({
   _id: event._id,
@@ -89,6 +94,9 @@ const toMatch = (event, markets) => ({
   status: event.status,
   startTime: event.startTime,
   markets: [...markets].sort(marketOrder).map((m) => ({ _id: m._id, name: m.name, type: m.type, maxBet: m.maxBet, runners: runnersFor(m, event) })),
+  // Feed matches: embeddable live score card and (when the provider has one) video.
+  // eslint-disable-next-line global-require
+  ...require('./diamondSync.service').mediaFor(event),
 });
 
 /** Live and upcoming events with at least one open market — the app's match feed. */
@@ -128,6 +136,14 @@ async function placeBet(player, { marketId, selection, stake }) {
 
   const runner = runnersFor(market, event).find((r) => r.name === selection);
   if (!runner) throw ApiError.badRequest('Selection is market mein nahi hai');
+  if (runner.active === false) throw ApiError.badRequest('Yeh selection abhi suspended hai');
+  // Feed markets: never take a bet on prices the feed hasn't refreshed recently.
+  if (market.externalId) {
+    const maxAge = event.status === 'Live' ? FEED_LIVE_MAX_AGE_MS : FEED_UPCOMING_MAX_AGE_MS;
+    if (!market.oddsAt || Date.now() - new Date(market.oddsAt).getTime() > maxAge) {
+      throw ApiError.badRequest('Odds update ho rahe hain — thodi der baad try karo');
+    }
+  }
 
   const user = await User.findById(player._id);
   const [settings, uplines] = await Promise.all([Settings.findById('main').lean(), uplinesOf(user)]);
@@ -190,6 +206,7 @@ async function placeBet(player, { marketId, selection, stake }) {
     Market.updateOne({ _id: market._id }, { $inc: { bets: 1, stake: amount, exposure: amount } }),
     Event.updateOne({ _id: event._id }, { $inc: { stake: amount, exposure: amount } }),
   ]);
+  // Feed markets: the result sync registers it with Diamond; nothing here waits on the feed.
   return bet;
 }
 
@@ -260,12 +277,18 @@ async function cashOut(player, betId) {
  * marked Won (profit credited as "Bet Win") or Lost (stake debited as "Bet
  * Loss"), and the market is closed.
  */
-async function settleMarket(marketId, winner) {
+/**
+ * `allowUnlisted` (feed results only): the winner may be an outcome nobody
+ * could back, e.g. "No" on a one-selection "Yes" proposition — every bet loses.
+ */
+async function settleMarket(marketId, winner, { allowUnlisted = false } = {}) {
   const existing = await Market.findById(marketId);
   if (!existing) throw ApiError.notFound('Market not found');
   if (existing.winner) throw ApiError.conflict('Market already settled');
   const event = await Event.findById(existing.event);
-  if (!runnersFor(existing, event).some((r) => r.name === winner)) throw ApiError.badRequest('Winner must be one of the market selections');
+  if (!allowUnlisted && !runnersFor(existing, event).some((r) => r.name === winner)) {
+    throw ApiError.badRequest('Winner must be one of the market selections');
+  }
 
   // Closing the market first (only if nobody else has) stops new bets and a second settlement.
   const market = await Market.findOneAndUpdate(

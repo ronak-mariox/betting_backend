@@ -37,7 +37,7 @@ const getPanels = async () => {
 };
 
 const suspendExposure = async (marketId) => {
-  const market = await Market.findByIdAndUpdate(marketId, { status: 'Suspended' }, { new: true });
+  const market = await Market.findByIdAndUpdate(marketId, { status: 'Suspended', adminSuspended: true }, { new: true });
   if (!market) throw ApiError.notFound('Market not found');
   return market;
 };

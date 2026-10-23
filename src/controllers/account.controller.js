@@ -8,11 +8,10 @@ const kycService = require('../services/kyc.service');
 const { ROLE_TO_ROLE_KEY } = require('../constants/permissions');
 
 /**
- * Creating a 'player' is additionally gated by the live "Create User"
- * permission (userManagement.createUser) — the only creation the
- * permissions matrix actually models. Staff-tier creations (franchise /
- * super-agent / agent) are governed purely by the role hierarchy; editing or
- * suspending them afterwards needs accountSettings.manageSubAgents.
+ * Creating a 'player' needs the live "Create User" permission
+ * (userManagement.createUser); creating a staff tier below you (franchise /
+ * super-agent / agent) needs "Manage Sub-Agents" (accountSettings.manageSubAgents),
+ * on top of the role hierarchy. Editing or suspending them needs the same.
  */
 const assertCanCreatePlayer = async (creator) => {
   const allowed = await permissionService.hasPermission(creator.role, 'userManagement', 'createUser', 'X');
@@ -30,7 +29,11 @@ const create = asyncHandler(async (req, res) => {
     const canReviewKyc = await permissionService.hasPermission(req.user.role, 'userManagement', 'editUser', 'X');
     if (!canReviewKyc) delete payload.kyc;
   }
-  // Staff tiers are onboarded by the hierarchy itself (createManagedAccount checks it).
+  if (role !== 'player') {
+    const canManage = await permissionService.hasPermission(req.user.role, 'accountSettings', 'manageSubAgents', 'X');
+    if (!canManage) throw ApiError.forbidden('You do not have permission to create sub-agents');
+  }
+  // The role hierarchy itself is checked in createManagedAccount.
 
   const canSetCommission = await permissionService.hasPermission(req.user.role, 'accountSettings', 'commissionSettings', 'X');
   const account = await accountService.createManagedAccount(req.user, payload, { canSetCommission });

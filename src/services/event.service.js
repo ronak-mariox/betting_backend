@@ -19,7 +19,9 @@ const getEvent = async (id) => {
     .populate('user', 'name username')
     .sort({ createdAt: -1 })
     .limit(20);
-  return { event, markets, recentBets };
+  // eslint-disable-next-line global-require
+  const media = require('./diamondSync.service').mediaFor(event);
+  return { event: { ...event.toJSON(), ...media }, markets, recentBets };
 };
 
 const createEvent = async ({ sport, league, name, emoji, startTime }) => {
@@ -32,7 +34,17 @@ const updateEventStatus = async ({ id, status }) => {
   if (['Completed', 'Settled'].includes(before?.status) && ['Live', 'Upcoming'].includes(status)) {
     throw ApiError.conflict(`This match is already ${before.status.toLowerCase()} and can't be reopened`);
   }
-  const event = await Event.findByIdAndUpdate(id, { status }, { new: true });
+  // Feed events: the admin holds or releases betting; Live / Upcoming always comes from the feed.
+  const current = await Event.findById(id).select('provider');
+  if (current?.provider === 'diamond' && status !== 'Suspended' && !['Completed', 'Settled'].includes(status)) {
+    await Event.updateOne({ _id: id }, { $set: { adminSuspended: false } });
+    // eslint-disable-next-line global-require
+    const diamondSync = require('./diamondSync.service');
+    await diamondSync.syncNow().catch(() => null);
+    return Event.findById(id);
+  }
+  // Feed events: an admin's suspension holds until the admin reopens it.
+  const event = await Event.findByIdAndUpdate(id, { status, adminSuspended: status === 'Suspended' }, { new: true });
   if (!event) throw ApiError.notFound('Event not found');
   if (status === 'Live' && before?.status !== 'Live') await notificationService.notifyMatchLive(event);
   if (status === 'Suspended' || status === 'Completed' || status === 'Settled') {

@@ -4,6 +4,17 @@ const env = require('../config/env');
 const { body, param } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const authController = require('../controllers/auth.controller');
+const { requireGrant } = require('../services/scope.service');
+
+/** Staff accounts follow the Permissions page here; players always manage their own profile. */
+const staffGrant = (groupKey, permissionKey, message) => async (req, _res, next) => {
+  try {
+    if (req.user.role !== 'player') await requireGrant(req.user, groupKey, permissionKey, 'X', message);
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
 const validate = require('../middleware/validate');
 const { authenticate, authorize } = require('../middleware/auth');
 
@@ -69,6 +80,7 @@ router.get('/me', authenticate, authController.me);
 router.patch(
   '/me',
   authenticate,
+  staffGrant('accountSettings', 'editProfile', 'You do not have permission to edit your profile'),
   [
     body('name').optional({ checkFalsy: true }).trim().isLength({ max: 80 }),
     body('email').optional({ checkFalsy: true }).trim().isEmail().withMessage('Enter a valid email'),
@@ -92,6 +104,7 @@ router.patch(
 router.post(
   '/change-password',
   authenticate,
+  staffGrant('accountSettings', 'changePassword', 'You do not have permission to change your password'),
   [
     body('currentPassword').notEmpty(),
     body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
