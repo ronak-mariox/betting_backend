@@ -67,7 +67,7 @@ async function recomputeAll() {
           { $match: { user: { $in: ids }, type: { $in: ['Bet Win', 'Bet Loss'] }, status: 'Completed' } },
           {
             $group: {
-              _id: { user: '$user', month: { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'Asia/Kolkata' } } },
+              _id: { user: '$user', month: { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: require('../utils/time').timezone() } } },
               total: { $sum: { $multiply: ['$amount', -1] } },
             },
           },

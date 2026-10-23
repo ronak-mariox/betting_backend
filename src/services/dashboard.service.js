@@ -8,11 +8,8 @@ const ApiProvider = require('../models/ApiProvider');
 const AuditLog = require('../models/AuditLog');
 const analyticsService = require('./analytics.service');
 
-const startOfToday = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
+/** Midnight in the platform's timezone (Settings → General), not the server's. */
+const startOfToday = () => require('../utils/time').startOfDay(0); // eslint-disable-line global-require
 
 const getDashboard = async () => {
   const [

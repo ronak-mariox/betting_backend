@@ -9,11 +9,35 @@ const env = require('../config/env');
 const TIMEOUT_MS = 15000;
 const CRICKET_SID = 4;
 
-const isConfigured = () => Boolean(env.diamond.apiKey);
+/**
+ * The key: an Active entry named "Diamond" on Platform Settings → API Keys,
+ * else DIAMOND_API_KEY from the environment. Switching it in the panel takes
+ * effect on the next request.
+ */
+const keyEntry = () => {
+  // eslint-disable-next-line global-require
+  const entry = (require('./settings.service').cached().apiKeys || []).find(
+    (k) => /diamond/i.test(k.name) && k.status === 'Active' && k.key,
+  );
+  return entry ? { id: entry._id, key: entry.key } : { id: null, key: env.diamond.apiKey };
+};
+
+const isConfigured = () => Boolean(keyEntry().key);
+
+/** The panel shows how fast the feed answers; saved at most once a minute. */
+let latencySavedAt = 0;
+const noteLatency = (id, ms) => {
+  if (!id || Date.now() - latencySavedAt < 60000) return;
+  latencySavedAt = Date.now();
+  // eslint-disable-next-line global-require
+  require('./settings.service').recordApiLatency(id, ms).catch(() => null);
+};
 
 async function request(method, path, { query = {}, body } = {}) {
+  const { id, key } = keyEntry();
   const url = new URL(`${env.diamond.baseUrl}${path}`);
-  Object.entries({ ...query, key: env.diamond.apiKey }).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+  Object.entries({ ...query, key }).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+  const started = Date.now();
   const res = await fetch(url, {
     method,
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'betting-backend/1.0' },
@@ -21,13 +45,19 @@ async function request(method, path, { query = {}, body } = {}) {
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const text = await res.text();
+  noteLatency(id, Date.now() - started);
   let json;
   try {
     json = JSON.parse(text);
   } catch {
     throw new Error(`Diamond ${path}: non-JSON response (${res.status})`);
   }
-  if (!res.ok && !json?.message) throw new Error(`Diamond ${path}: HTTP ${res.status}`);
+  if (!res.ok && !json?.message) {
+    // Name the match / market, so a log line says which one Diamond refused and why.
+    const subject = query.gmid ?? (body && `${body.event_id} ${body.market_name}`);
+    const why = json?.error ? ` "${json.error}"` : '';
+    throw new Error(`Diamond ${path}${subject ? ` (${subject})` : ''}: HTTP ${res.status}${why}`);
+  }
   return json;
 }
 

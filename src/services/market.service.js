@@ -107,6 +107,9 @@ const updateMarketStatus = async (id, status) => {
   market.status = status;
   // Feed markets: an admin's choice holds until the admin changes it again.
   market.adminSuspended = status === 'Suspended';
+  market.suspendedWithEvent = false;
+  // Reopened: a fresh exposure warning can fire again.
+  if (status === 'Active') market.exposureWarnedAt = null;
   await market.save();
   return market;
 };

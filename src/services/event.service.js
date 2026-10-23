@@ -47,8 +47,17 @@ const updateEventStatus = async ({ id, status }) => {
   const event = await Event.findByIdAndUpdate(id, { status, adminSuspended: status === 'Suspended' }, { new: true });
   if (!event) throw ApiError.notFound('Event not found');
   if (status === 'Live' && before?.status !== 'Live') await notificationService.notifyMatchLive(event);
-  if (status === 'Suspended' || status === 'Completed' || status === 'Settled') {
+  if (status === 'Suspended') {
+    await Market.updateMany({ event: event._id, status: 'Active' }, { $set: { status: 'Suspended', suspendedWithEvent: true } });
+  } else if (status === 'Completed' || status === 'Settled') {
     await Market.updateMany({ event: event._id, status: 'Active' }, { $set: { status: 'Suspended' } });
+    await Market.updateMany({ event: event._id, suspendedWithEvent: true }, { $set: { suspendedWithEvent: false } });
+  } else if (before?.status === 'Suspended') {
+    // Reopened: bring back the markets the suspension closed (not ones suspended on their own or settled).
+    await Market.updateMany(
+      { event: event._id, status: 'Suspended', suspendedWithEvent: true, winner: '' },
+      { $set: { status: 'Active', suspendedWithEvent: false } },
+    );
   }
   return event;
 };

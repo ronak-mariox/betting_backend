@@ -53,7 +53,9 @@ const login = asyncHandler(async (req, res) => {
       req,
       metadata: { username: normalizedUsername },
     });
-    throw ApiError.unauthorized('Invalid username or password');
+    // An unknown username gets its own answer, so the app can point the player to sign-up.
+    if (!user) throw ApiError.notFound('No account found with this username');
+    throw ApiError.unauthorized('Incorrect password');
   }
 
   if (user.status !== 'active') {
@@ -147,7 +149,7 @@ const changePassword = asyncHandler(async (req, res) => {
 const forgotPassword = asyncHandler(async (req, res) => {
   const user = await passwordResetService.requestReset({ username: req.body.username, ip: requestMeta(req).ip });
   if (user) await auditService.record({ actor: user, action: 'password_reset_requested', target: user, req });
-  res.json({ message: 'If that account has an email on file, a reset code has been sent to it.' });
+  res.json({ message: 'If that account has an email or mobile number on file, a reset code has been sent to it.' });
 });
 
 const resetPassword = asyncHandler(async (req, res) => {

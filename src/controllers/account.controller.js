@@ -4,9 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const accountService = require('../services/account.service');
 const permissionService = require('../services/permission.service');
 const auditService = require('../services/audit.service');
-const kycService = require('../services/kyc.service');
 const { ROLE_TO_ROLE_KEY } = require('../constants/permissions');
-
 /**
  * Creating a 'player' needs the live "Create User" permission
  * (userManagement.createUser); creating a staff tier below you (franchise /
@@ -24,10 +22,6 @@ const create = asyncHandler(async (req, res) => {
   const payload = { ...req.body };
   if (role === 'player') {
     await assertCanCreatePlayer(req.user);
-    // A KYC status set at creation skips the document review, so only roles
-    // allowed to review KYC (the "Edit User" grant) may set one.
-    const canReviewKyc = await permissionService.hasPermission(req.user.role, 'userManagement', 'editUser', 'X');
-    if (!canReviewKyc) delete payload.kyc;
   }
   if (role !== 'player') {
     const canManage = await permissionService.hasPermission(req.user.role, 'accountSettings', 'manageSubAgents', 'X');
@@ -113,7 +107,6 @@ const update = asyncHandler(async (req, res) => {
   if (!account) throw ApiError.notFound('Account not found');
 
   const canEditPlayers = await permissionService.hasPermission(req.user.role, 'userManagement', 'editUser', 'X');
-  const previousKyc = account.kyc;
   const [canManageStaff, canSetCommission] = await Promise.all([
     permissionService.hasPermission(req.user.role, 'accountSettings', 'manageSubAgents', 'X'),
     permissionService.hasPermission(req.user.role, 'accountSettings', 'commissionSettings', 'X'),
@@ -123,22 +116,11 @@ const update = asyncHandler(async (req, res) => {
     canManageStaff,
     canSetCommission,
   });
-  if (updated.kyc !== previousKyc) {
-    await kycService.recordReview({
-      userId: updated._id,
-      status: updated.kyc,
-      reviewer: req.user,
-      reason: req.body.kycRejectionReason,
-    });
-  }
-
-  const kycDecision = updated.kyc !== previousKyc && { Verified: 'kyc_verified', Rejected: 'kyc_rejected' }[updated.kyc];
   await auditService.record({
     actor: req.user,
-    action: kycDecision || 'account_updated',
+    action: 'account_updated',
     target: updated,
     req,
-    ...(kycDecision === 'kyc_rejected' && req.body.kycRejectionReason ? { metadata: { reason: req.body.kycRejectionReason } } : {}),
   });
 
   res.json({ account: updated });

@@ -16,7 +16,7 @@ const staffGrant = (groupKey, permissionKey, message) => async (req, _res, next)
   }
 };
 const validate = require('../middleware/validate');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate, authorize } = require('../middleware/auth');
 
 const router = Router();
 
@@ -73,7 +73,7 @@ router.post(
   authController.refresh,
 );
 
-router.post('/logout', authenticate, authController.logout);
+router.post('/logout', optionalAuthenticate, authController.logout);
 
 router.get('/me', authenticate, authController.me);
 

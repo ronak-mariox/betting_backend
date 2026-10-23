@@ -33,7 +33,7 @@ const env = {
   },
   /** Diamond odds feed (cricket). Off when DIAMOND_API_KEY is empty. */
   diamond: {
-    baseUrl: (process.env.DIAMOND_BASE_URL || 'http://77.37.44.135:3009').replace(/\/$/, ''),
+    baseUrl: (process.env.DIAMOND_BASE_URL || 'http://46.202.166.33:3009').replace(/\/$/, ''),
     apiKey: process.env.DIAMOND_API_KEY || '',
     /** Embeddable players, `gmid` appended. */
     streamUrl: process.env.DIAMOND_STREAM_URL || 'https://live.cricketid.xyz/directStream?gmid=',

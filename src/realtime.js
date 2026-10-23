@@ -1,5 +1,5 @@
 const { Server } = require('socket.io');
-const env = require('./config/env');
+const { corsOrigin } = require('./config/cors');
 const User = require('./models/User');
 const { verifyAccessToken } = require('./services/token.service');
 
@@ -12,6 +12,7 @@ const { verifyAccessToken } = require('./services/token.service');
  *   match:<id>   clients on that match       odds
  *   user:<id>    that account's devices      player:changed
  *   staff        panel (non-player) users    admin:changed, permissions:changed
+ *   (everyone)   every connected client      config:changed
  *
  * Clients connect with `auth: { token: <access token> }`. Nothing here is
  * trusted for betting — a bet always takes the server's current price.
@@ -31,7 +32,7 @@ function coalesce(key, ms, fire) {
 
 function init(httpServer) {
   io = new Server(httpServer, {
-    cors: { origin: env.corsOrigins, credentials: true },
+    cors: { origin: corsOrigin, credentials: true },
     // Phones on mobile data drop and rejoin often; keep the heartbeat short.
     pingInterval: 20000,
     pingTimeout: 20000,
@@ -96,6 +97,21 @@ function emitPermissionsChanged(roleKey) {
   coalesce(`perm:${roleKey}`, 300, () => io.to('staff').emit('permissions:changed', { roleKey }));
 }
 
+/** Platform settings or published CMS content changed: clients refetch /api/app-config. */
+function emitConfigChanged() {
+  if (!io) return;
+  coalesce('config', 500, () => io.emit('config:changed'));
+}
+
 const connectedCount = () => (io ? io.engine.clientsCount : 0);
 
-module.exports = { init, emitOdds, emitMatchesChanged, emitPlayerChanged, emitStaffChanged, emitPermissionsChanged, connectedCount };
+module.exports = {
+  init,
+  emitOdds,
+  emitMatchesChanged,
+  emitPlayerChanged,
+  emitStaffChanged,
+  emitPermissionsChanged,
+  emitConfigChanged,
+  connectedCount,
+};
